@@ -215,11 +215,84 @@ async def scan_document_digits(payload: DocumentScanRequest):
 
 
 # 9. Multipart Image File Upload
+ALLOWED_UPLOAD_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+
 @app.post("/api/upload")
-async def upload_image_file(file: UploadFile = File(...), model: str = Query("cnn")):
-    content = await file.read()
-    b64_str = encode_numpy_to_base64(decode_image_to_numpy(content))
-    return await predict_single_digit(SinglePredictRequest(image=b64_str, model=model))
+async def upload_image_file(file: UploadFile = File(None), model: str = Query("cnn")):
+    # 1. Model initialization check
+    if not registry._is_initialized:
+        raise HTTPException(status_code=503, detail="Model engine is not loaded or still initializing.")
+
+    # 2. File presence check
+    if file is None or not file.filename:
+        raise HTTPException(status_code=400, detail="No image selected. Please choose a JPG, JPEG, or PNG file.")
+
+    # 3. File extension validation
+    filename_lower = file.filename.lower()
+    ext = os.path.splitext(filename_lower)[1]
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type '{ext}'. Only JPG, JPEG, and PNG images are supported."
+        )
+
+    # 4. Content reading & empty check
+    try:
+        content = await file.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read uploaded file: {str(e)}")
+
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="The selected file is empty. Please upload a valid image.")
+
+    # 5. Decode image
+    try:
+        raw_numpy = decode_image_to_numpy(content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Image cannot be processed or is corrupted: {str(e)}")
+
+    # 6. Generate Base64 preview of raw uploaded image
+    b64_upload_preview = encode_numpy_to_base64(raw_numpy)
+
+    # 7. Apply the EXACT same mathematical preprocessing pipeline as canvas
+    prep = preprocess_single_digit(raw_numpy)
+
+    if prep.status == "empty":
+        return {
+            "status": "empty",
+            "message": "No handwritten digit stroke detected in the image. Please ensure the digit is visible.",
+            "digit": None,
+            "confidence": 0.0,
+            "probabilities": [0.0] * 10,
+            "uploaded_preview": b64_upload_preview,
+            "preprocessed_image": prep.preview_base64,
+            "center_of_mass": prep.center_of_mass
+        }
+    elif prep.status == "error":
+        raise HTTPException(status_code=400, detail=prep.diagnostics.get("error", "Image preprocessing failed."))
+
+    # 8. Send to the SAME existing model (PyTorch CNN by default)
+    t0 = time.perf_counter()
+    try:
+        res = registry.predict(model, prep.tensor_28x28)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Inference error: {str(e)}")
+
+    total_latency = (time.perf_counter() - t0) * 1000.0
+
+    return {
+        "status": "success",
+        "digit": res.digit,
+        "confidence": res.confidence,
+        "probabilities": res.probabilities,
+        "model_used": res.model_name,
+        "uploaded_preview": b64_upload_preview,
+        "preprocessed_image": prep.preview_base64,
+        "center_of_mass": prep.center_of_mass,
+        "inference_latency_ms": res.latency_ms,
+        "total_latency_ms": round(total_latency, 2),
+        "metadata": res.metadata
+    }
 
 
 # Mount Frontend UI if directory exists
