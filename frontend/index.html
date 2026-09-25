@@ -56,12 +56,23 @@
       <!-- TAB 1: Interactive Canvas Mode -->
       <section class="tab-pane active" id="canvas-mode">
         <div class="workspace-grid">
-          <!-- Left: Drawing Pad & Controls -->
+          <!-- Left: Drawing Pad & Image Upload Controls -->
           <div class="glass-card canvas-card">
             <div class="card-header">
-              <h2 class="card-title">Handwritten Canvas</h2>
+              <!-- Dual Input Mode Selector -->
+              <div class="input-segment-control">
+                <button type="button" class="segment-btn active" id="modeCanvasBtn">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+                  Draw on Canvas
+                </button>
+                <button type="button" class="segment-btn" id="modeUploadBtn">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  Upload Handwritten Digit
+                </button>
+              </div>
+
               <div class="model-select-wrapper">
-                <label for="modelSelect">Active Engine:</label>
+                <label for="modelSelect">Engine:</label>
                 <select id="modelSelect" class="custom-select">
                   <option value="cnn" selected>CNN (Deep ConvNet - >99% Acc)</option>
                   <option value="ann">ANN (Deep 4-Layer MLP - 98% Acc)</option>
@@ -71,39 +82,95 @@
               </div>
             </div>
 
-            <div class="canvas-wrapper">
-              <canvas id="drawingCanvas" width="280" height="280"></canvas>
-              <div class="canvas-grid-lines"></div>
+            <!-- MODE 1: Interactive Canvas Drawing Section -->
+            <div id="canvasSection" class="input-mode-panel active">
+              <div class="canvas-wrapper">
+                <canvas id="drawingCanvas" width="280" height="280"></canvas>
+                <div class="canvas-grid-lines"></div>
+              </div>
+
+              <div class="canvas-toolbar">
+                <div class="brush-controls">
+                  <label for="brushSize">Stroke:</label>
+                  <input type="range" id="brushSize" min="14" max="28" value="20">
+                  <span id="brushValue">20px</span>
+                </div>
+                <div class="action-buttons">
+                  <button id="clearBtn" class="btn btn-secondary">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    Clear
+                  </button>
+                  <button id="predictBtn" class="btn btn-primary">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Scan Digit
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div class="canvas-toolbar">
-              <div class="brush-controls">
-                <label for="brushSize">Stroke:</label>
-                <input type="range" id="brushSize" min="14" max="28" value="20">
-                <span id="brushValue">20px</span>
-              </div>
-              <div class="action-buttons">
-                <button id="clearBtn" class="btn btn-secondary">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  Clear
-                </button>
-                <button id="predictBtn" class="btn btn-primary">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                  Scan Digit
-                </button>
+            <!-- MODE 2: Upload Handwritten Digit Section -->
+            <div id="uploadSection" class="input-mode-panel" style="display: none;">
+              <div class="digit-upload-card-inner">
+                <input type="file" id="digitFileInput" accept=".jpg, .jpeg, .png, image/jpeg, image/png" style="display: none;">
+                
+                <div class="digit-dropzone" id="digitDropzone">
+                  <div class="dropzone-unselected" id="dropzoneEmptyView">
+                    <div class="upload-icon-circle">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <rect x="3" y="3" width="18" height="18" rx="4" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                    </div>
+                    <p class="dropzone-main-text">Upload Handwritten Digit</p>
+                    <p class="dropzone-sub-text">Drag & drop your file here, or <span class="highlight-link">Browse</span></p>
+                    <span class="file-types-badge">Supports: JPG, JPEG, PNG</span>
+                  </div>
+
+                  <div class="dropzone-selected" id="dropzoneSelectedView" style="display: none;">
+                    <div class="uploaded-thumb-wrapper">
+                      <img id="uploadedDigitPreview" src="" alt="Uploaded Digit Preview">
+                    </div>
+                    <div class="uploaded-file-info">
+                      <span id="uploadedFileName" class="file-name">digit.png</span>
+                      <span id="uploadedFileSize" class="file-size">0 KB</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Error Alert Banner -->
+                <div id="uploadErrorBanner" class="error-banner" style="display: none;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <span id="uploadErrorText">Error message</span>
+                </div>
+
+                <div class="upload-actions-bar">
+                  <button id="clearUploadBtn" class="btn btn-secondary">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    Remove
+                  </button>
+                  <button id="processImageBtn" class="btn btn-primary" disabled>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Process Image
+                  </button>
+                </div>
               </div>
             </div>
 
-            <!-- Mathematical Preprocessor Visualizer -->
+            <!-- Mathematical Preprocessor Visualizer (Common for Both) -->
             <div class="preprocessor-strip">
               <div class="strip-header">
                 <h3>Mathematical Vision Normalizer</h3>
-                <span class="badge">OpenCV Moments</span>
+                <span class="badge" id="normalizerSourceBadge">Canvas Source</span>
               </div>
               <div class="preprocessor-body">
                 <div class="preview-box">
                   <img id="tensorPreview" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" alt="28x28 Normalized Manifold">
-                  <span>28x28 Tensor</span>
+                  <span>Processed 28x28</span>
+                </div>
+                <div class="preview-box" id="rawUploadBox" style="display: none;">
+                  <img id="rawUploadThumb" src="" alt="Original Uploaded Image">
+                  <span>Uploaded Image</span>
                 </div>
                 <div class="centroid-telemetry">
                   <div class="telemetry-item">
