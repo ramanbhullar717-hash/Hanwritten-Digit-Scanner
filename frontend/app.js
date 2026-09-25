@@ -177,7 +177,212 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   renderProbabilities(new Array(10).fill(0));
 
-  // --- API 1: Predict Single Digit ---
+  // Mode Switching & Upload Elements
+  const modeCanvasBtn = document.getElementById("modeCanvasBtn");
+  const modeUploadBtn = document.getElementById("modeUploadBtn");
+  const canvasSection = document.getElementById("canvasSection");
+  const uploadSection = document.getElementById("uploadSection");
+  const normalizerSourceBadge = document.getElementById("normalizerSourceBadge");
+
+  const digitFileInput = document.getElementById("digitFileInput");
+  const digitDropzone = document.getElementById("digitDropzone");
+  const dropzoneEmptyView = document.getElementById("dropzoneEmptyView");
+  const dropzoneSelectedView = document.getElementById("dropzoneSelectedView");
+  const uploadedDigitPreview = document.getElementById("uploadedDigitPreview");
+  const uploadedFileName = document.getElementById("uploadedFileName");
+  const uploadedFileSize = document.getElementById("uploadedFileSize");
+  const uploadErrorBanner = document.getElementById("uploadErrorBanner");
+  const uploadErrorText = document.getElementById("uploadErrorText");
+  const clearUploadBtn = document.getElementById("clearUploadBtn");
+  const processImageBtn = document.getElementById("processImageBtn");
+  const rawUploadBox = document.getElementById("rawUploadBox");
+  const rawUploadThumb = document.getElementById("rawUploadThumb");
+
+  let selectedDigitFile = null;
+
+  // Mode Switcher Listeners
+  if (modeCanvasBtn && modeUploadBtn) {
+    modeCanvasBtn.addEventListener("click", () => {
+      modeCanvasBtn.classList.add("active");
+      modeUploadBtn.classList.remove("active");
+      canvasSection.style.display = "block";
+      uploadSection.style.display = "none";
+      if (normalizerSourceBadge) normalizerSourceBadge.textContent = "Canvas Source";
+    });
+
+    modeUploadBtn.addEventListener("click", () => {
+      modeUploadBtn.classList.add("active");
+      modeCanvasBtn.classList.remove("active");
+      canvasSection.style.display = "none";
+      uploadSection.style.display = "block";
+      if (normalizerSourceBadge) normalizerSourceBadge.textContent = "Image Upload Source";
+    });
+  }
+
+  function showUploadError(msg) {
+    if (uploadErrorText && uploadErrorBanner) {
+      uploadErrorText.textContent = msg;
+      uploadErrorBanner.style.display = "flex";
+    }
+  }
+
+  function hideUploadError() {
+    if (uploadErrorBanner) {
+      uploadErrorBanner.style.display = "none";
+    }
+  }
+
+  function handleDigitFileSelection(file) {
+    hideUploadError();
+    if (!file) return;
+
+    const allowedExts = [".jpg", ".jpeg", ".png"];
+    const fileName = file.name.toLowerCase();
+    const hasValidExt = allowedExts.some(ext => fileName.endsWith(ext));
+
+    if (!hasValidExt) {
+      showUploadError("Invalid file type. Only JPG, JPEG, and PNG images are supported.");
+      return;
+    }
+
+    if (file.size === 0) {
+      showUploadError("Selected image file is empty. Please choose a valid image.");
+      return;
+    }
+
+    selectedDigitFile = file;
+    uploadedFileName.textContent = file.name;
+    uploadedFileSize.textContent = (file.size / 1024).toFixed(1) + " KB";
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      uploadedDigitPreview.src = e.target.result;
+      dropzoneEmptyView.style.display = "none";
+      dropzoneSelectedView.style.display = "flex";
+      processImageBtn.disabled = false;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  if (digitDropzone && digitFileInput) {
+    digitDropzone.addEventListener("click", () => digitFileInput.click());
+
+    digitFileInput.addEventListener("change", (e) => {
+      if (e.target.files && e.target.files[0]) {
+        handleDigitFileSelection(e.target.files[0]);
+      }
+    });
+
+    digitDropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      digitDropzone.classList.add("drag-active");
+    });
+
+    digitDropzone.addEventListener("dragleave", () => {
+      digitDropzone.classList.remove("drag-active");
+    });
+
+    digitDropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      digitDropzone.classList.remove("drag-active");
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handleDigitFileSelection(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  if (clearUploadBtn) {
+    clearUploadBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectedDigitFile = null;
+      if (digitFileInput) digitFileInput.value = "";
+      dropzoneEmptyView.style.display = "flex";
+      dropzoneSelectedView.style.display = "none";
+      processImageBtn.disabled = true;
+      if (rawUploadBox) rawUploadBox.style.display = "none";
+      hideUploadError();
+    });
+  }
+
+  // Process Uploaded Image via /api/upload
+  if (processImageBtn) {
+    processImageBtn.addEventListener("click", async () => {
+      if (!selectedDigitFile) {
+        showUploadError("No image selected. Please choose a JPG, JPEG, or PNG file.");
+        return;
+      }
+
+      hideUploadError();
+      const activeModel = modelSelect.value;
+
+      try {
+        processImageBtn.disabled = true;
+        processImageBtn.innerHTML = `Processing...`;
+
+        const formData = new FormData();
+        formData.append("file", selectedDigitFile);
+
+        const res = await fetch(`/api/upload?model=${activeModel}`, {
+          method: "POST",
+          body: formData
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          showUploadError(data.detail || "Failed to process image.");
+          return;
+        }
+
+        if (data.status === "empty") {
+          showUploadError(data.message || "No handwritten digit stroke detected in the image.");
+          predictedDigit.textContent = "—";
+          confidencePercent.textContent = "0.0%";
+          confidenceBar.style.width = "0%";
+          if (data.preprocessed_image) tensorPreview.src = data.preprocessed_image;
+          if (data.uploaded_preview && rawUploadThumb && rawUploadBox) {
+            rawUploadThumb.src = data.uploaded_preview;
+            rawUploadBox.style.display = "flex";
+          }
+          return;
+        }
+
+        if (data.status === "success") {
+          predictedDigit.textContent = data.digit;
+          const confPercent = (data.confidence * 100).toFixed(1);
+          confidencePercent.textContent = `${confPercent}%`;
+          confidenceBar.style.width = `${confPercent}%`;
+          latencyBadge.textContent = `${data.total_latency_ms} ms`;
+          activeEngineBadge.textContent = data.model_used;
+
+          // Display processed 28x28 preview and raw uploaded preview
+          tensorPreview.src = data.preprocessed_image;
+          if (rawUploadThumb && rawUploadBox) {
+            rawUploadThumb.src = data.uploaded_preview;
+            rawUploadBox.style.display = "flex";
+          }
+
+          comVal.textContent = `(${data.center_of_mass[0]}, ${data.center_of_mass[1]})`;
+          renderProbabilities(data.probabilities);
+
+          // Fetch explainable AI prototypes and style archetype using the same uploaded digit
+          fetchKNNExplains(data.uploaded_preview);
+          fetchClusterStyle(data.uploaded_preview);
+        }
+      } catch (err) {
+        console.error("Upload Error:", err);
+        showUploadError("Network or server error while uploading image.");
+      } finally {
+        processImageBtn.disabled = false;
+        processImageBtn.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Process Image
+        `;
+      }
+    });
+  }
+
+  // --- API 1: Predict Single Digit (Canvas) ---
   async function scanCurrentCanvas() {
     if (!hasDrawn) return;
     const b64 = canvas.toDataURL("image/png");
@@ -203,6 +408,7 @@ document.addEventListener("DOMContentLoaded", () => {
         latencyBadge.textContent = `${data.total_latency_ms} ms`;
         activeEngineBadge.textContent = data.model_used;
         tensorPreview.src = data.preprocessed_image;
+        if (rawUploadBox) rawUploadBox.style.display = "none";
         comVal.textContent = `(${data.center_of_mass[0]}, ${data.center_of_mass[1]})`;
         renderProbabilities(data.probabilities);
 
